@@ -1,11 +1,8 @@
 import * as core from "@actions/core";
 import * as tc from "@actions/tool-cache";
 import * as github from "@actions/github";
-import { join, basename } from "node:path";
 import semver from "semver";
 import process from "node:process";
-import { pipeline } from "node:stream/promises";
-import { createWriteStream } from "node:fs";
 import { $ } from "execa";
 import { createUnauthenticatedAuth } from "@octokit/auth-unauthenticated";
 
@@ -28,7 +25,7 @@ if (version === "latest") {
     repo: "cli",
   });
   const versions = releases.map((release) => release.tag_name.slice(1));
-  version = semver.maxSatisfying(versions, version);
+  version = semver.maxSatisfying(versions, version) ?? version;
 }
 core.debug(`Resolved version: ${version}`);
 
@@ -39,17 +36,17 @@ if (!found) {
     linux: "linux",
     darwin: "macOS",
     win32: "windows",
-  }[process.platform];
+  }[process.platform as string];
   const arch = {
     x64: "amd64",
     arm: "arm",
     arm64: "arm64",
-  }[process.arch];
+  }[process.arch as string];
   const ext = {
     linux: "tar.gz",
     darwin: semver.lt(version, "2.28.0") ? "tar.gz" : "zip",
     win32: "zip",
-  }[process.platform];
+  }[process.platform as string];
   const file = `gh_${version}_${platform}_${arch}.${ext}`;
   found = await tc.downloadTool(
     `https://github.com/cli/cli/releases/download/v${version}/${file}`

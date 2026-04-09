@@ -9,10 +9,10 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
       - run: npm ci
       - run: npm run build
@@ -22,6 +22,6 @@ jobs:
       - run: git tag -f "$TAG" && git push -f origin "$TAG"
         env:
           TAG: ${{ github.event.release.tag_name }}
-      - uses: actions/publish-action@v0.2.2
+      - uses: actions/publish-action@v0.4.0
         with:
           source-tag: ${{ github.event.release.tag_name }}

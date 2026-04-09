@@ -4,7 +4,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   build: {
     minify: false,
-    target: "node20",
+    target: "node24",
     ssr: true,
     rollupOptions: {
       input: ["src/main.ts"],
