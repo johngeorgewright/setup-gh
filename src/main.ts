@@ -80,5 +80,5 @@ async function findDirectoryContainingBinary(dir: string) {
     const result = regex.exec(file)
     if (result) return path.join(dir, result[1])
   }
-  throw new Error(`Cound not find gh binary in `)
+  throw new Error(`Cound not find gh binary in ${dir}`)
 }
