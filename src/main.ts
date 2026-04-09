@@ -5,6 +5,8 @@ import semver from "semver";
 import process from "node:process";
 import { $ } from "execa";
 import { createUnauthenticatedAuth } from "@octokit/auth-unauthenticated";
+import * as path from 'node:path';
+import { readdir } from "node:fs/promises";
 
 const octokit = core.getInput("cli-token")
   ? github.getOctokit(core.getInput("cli-token"))
@@ -56,9 +58,11 @@ if (!found) {
   } else {
     found = await tc.extractTar(found);
   }
+  core.debug('### extracted contents')
+  core.debug((await readdir(found)).join('\n'))
   found = await tc.cacheDir(found, "gh", version);
 }
-core.addPath(found);
+core.addPath(await findDirectoryContainingBinary(found));
 core.setOutput("gh-version", version);
 
 const token = core.getInput("token");
@@ -68,4 +72,13 @@ if (token) {
   core.setOutput("auth", true);
 } else {
   core.setOutput("auth", false);
+}
+
+async function findDirectoryContainingBinary(dir: string) {
+  const regex = /(.*)\bgh$/
+  for (const file of await readdir(dir, {recursive: true})) {
+    const result = regex.exec(file)
+    if (result) return path.join(dir, result[1])
+  }
+  throw new Error(`Cound not find gh binary in `)
 }
