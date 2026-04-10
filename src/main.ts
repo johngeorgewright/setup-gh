@@ -1,11 +1,11 @@
 import * as core from '@actions/core'
 import * as tc from '@actions/tool-cache'
-import { $ } from 'execa'
 import {
   download,
   extract,
   findDirectoryContainingBinary,
   getVersion,
+  login,
 } from './lib'
 
 const version = await getVersion()
@@ -23,8 +23,7 @@ core.setOutput('gh-version', version)
 
 const token = core.getInput('token')
 if (token) {
-  const { hostname } = new URL(core.getInput('github-server-url'))
-  await $({ input: token })`gh auth login --with-token --hostname ${hostname}`
+  await login(token)
   core.setOutput('auth', true)
 } else {
   core.setOutput('auth', false)

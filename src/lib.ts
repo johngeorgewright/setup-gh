@@ -5,6 +5,7 @@ import { downloadTool, extractTar, extractZip } from '@actions/tool-cache'
 import { lt, maxSatisfying } from 'semver'
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
+import { $ } from 'execa'
 
 export async function download(version: string) {
   const file = `gh_${version}_${getPlatform()}_${getArch()}.${getExt(version)}`
@@ -48,6 +49,11 @@ export async function findDirectoryContainingBinary(dir: string) {
     if (result) return path.join(dir, result[1])
   }
   throw new Error(`Cound not find gh binary in ${dir}`)
+}
+
+export async function login(token: string) {
+  const { hostname } = new URL(getInput('github-server-url'))
+  await $({ input: token })`gh auth login --with-token --hostname ${hostname}`
 }
 
 function getPlatform() {
