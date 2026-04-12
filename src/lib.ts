@@ -30,7 +30,7 @@ export async function extract(filename: string) {
 
 export async function getRelease(): Promise<VersionedRelease> {
   const octokit = github()
-  const version = getInput('version')
+  const version = getInput('gh-version')
   let release: Release | undefined
   if (version === 'latest') {
     ;({ data: release } = await octokit.rest.repos.getLatestRelease({
@@ -72,7 +72,7 @@ function getReleaseVersion(release: Release) {
 }
 
 function noReleaseError(): never {
-  throw new Error(`Cannot find version "${getInput('version')}"`)
+  throw new Error(`Cannot find version "${getInput('gh-version')}"`)
 }
 
 async function* iterateReleases(octokit: Octokit) {
