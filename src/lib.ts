@@ -9,7 +9,7 @@ import { $ } from 'execa'
 import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
 import type { GitHub } from '@actions/github/lib/utils'
 
-export async function download(release: Release) {
+export async function download(release: Release): Promise<string> {
   const platformArchIdentifier = `${getPlatform()} ${getArch()}`
   const asset = release.assets.find((asset) =>
     asset.label?.endsWith(platformArchIdentifier),
@@ -19,7 +19,7 @@ export async function download(release: Release) {
   return await downloadTool(asset.browser_download_url)
 }
 
-export async function extract(filename: string) {
+export async function extract(filename: string): Promise<string> {
   const extracted = filename.endsWith('.zip')
     ? await extractZip(filename)
     : await extractTar(filename)
@@ -54,7 +54,9 @@ export async function getRelease(): Promise<VersionedRelease> {
   return { ...release, version: getReleaseVersion(release) }
 }
 
-export async function findDirectoryContainingBinary(dir: string) {
+export async function findDirectoryContainingBinary(
+  dir: string,
+): Promise<string> {
   for (const file of await readdir(dir, { recursive: true })) {
     if (path.basename(file, '.exe') === 'gh')
       return path.join(dir, path.dirname(file))
@@ -62,12 +64,12 @@ export async function findDirectoryContainingBinary(dir: string) {
   throw new Error(`Cound not find gh binary in ${dir}`)
 }
 
-export async function login(token: string) {
+export async function login(token: string): Promise<void> {
   const { hostname } = new URL(getInput('github-server-url'))
   await $({ input: token })`gh auth login --with-token --hostname ${hostname}`
 }
 
-function getReleaseVersion(release: Release) {
+function getReleaseVersion(release: Release): string {
   return release.tag_name.replace(/^v/, '')
 }
 
@@ -75,7 +77,7 @@ function noReleaseError(): never {
   throw new Error(`Cannot find version "${getInput('gh-version')}"`)
 }
 
-async function* iterateReleases(octokit: Octokit) {
+async function* iterateReleases(octokit: Octokit): AsyncGenerator<Release> {
   for await (const response of octokit.paginate.iterator(
     octokit.rest.repos.listReleases,
     {
@@ -87,7 +89,7 @@ async function* iterateReleases(octokit: Octokit) {
   }
 }
 
-function getPlatform() {
+function getPlatform(): string {
   switch (process.platform) {
     case 'darwin':
       return 'macOS'
@@ -98,7 +100,7 @@ function getPlatform() {
   }
 }
 
-function getArch() {
+function getArch(): string {
   switch (process.arch) {
     case 'x64':
       return 'amd64'
@@ -111,7 +113,7 @@ function getArch() {
   }
 }
 
-function github() {
+function github(): Octokit {
   return getInput('cli-token')
     ? getOctokit(getInput('cli-token'))
     : getOctokit(undefined!, {
