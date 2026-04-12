@@ -4,22 +4,22 @@ import {
   download,
   extract,
   findDirectoryContainingBinary,
-  getVersion,
+  getRelease,
   login,
 } from './lib'
 
-const version = await getVersion()
-core.debug(`Resolved version: ${version}`)
+const release = await getRelease()
+core.debug(`Resolved version: ${release.version}`)
 
-let found = tc.find('gh', version)
+let found = tc.find('gh', release.version)
 core.setOutput('cache-hit', !!found)
 if (!found) {
-  found = await download(version)
+  found = await download(release)
     .then(extract)
-    .then((dir) => tc.cacheDir(dir, 'gh', version))
+    .then((dir) => tc.cacheDir(dir, 'gh', release.version))
 }
 core.addPath(await findDirectoryContainingBinary(found))
-core.setOutput('gh-version', version)
+core.setOutput('gh-version', release.version)
 
 const token = core.getInput('token')
 if (token) {

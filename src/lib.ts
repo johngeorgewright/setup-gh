@@ -2,16 +2,21 @@ import { debug, getInput } from '@actions/core'
 import { getOctokit } from '@actions/github'
 import { createUnauthenticatedAuth } from '@octokit/auth-unauthenticated'
 import { downloadTool, extractTar, extractZip } from '@actions/tool-cache'
-import { lt, maxSatisfying } from 'semver'
+import { coerce, lt, satisfies } from 'semver'
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { $ } from 'execa'
+import type { RestEndpointMethodTypes } from '@octokit/plugin-rest-endpoint-methods'
+import type { GitHub } from '@actions/github/lib/utils'
 
-export async function download(version: string) {
-  const file = `gh_${version}_${getPlatform()}_${getArch()}.${getExt(version)}`
-  return await downloadTool(
-    `https://github.com/cli/cli/releases/download/v${version}/${file}`,
+export async function download(release: Release) {
+  const platformArchIdentifier = `${getPlatform()} ${getArch()}`
+  const asset = release.assets.find((asset) =>
+    asset.label?.endsWith(platformArchIdentifier),
   )
+  if (!asset)
+    throw new Error(`Cannot find release asset for ${platformArchIdentifier}`)
+  return await downloadTool(asset.browser_download_url)
 }
 
 export async function extract(filename: string) {
@@ -23,30 +28,36 @@ export async function extract(filename: string) {
   return extracted
 }
 
-export async function getVersion() {
+export async function getRelease(): Promise<VersionedRelease> {
   const octokit = github()
   const version = getInput('version')
+  let release: Release | undefined
   if (version === 'latest') {
-    const { data } = await octokit.rest.repos.getLatestRelease({
+    ;({ data: release } = await octokit.rest.repos.getLatestRelease({
       owner: 'cli',
       repo: 'cli',
-    })
-    return data.tag_name.slice(1)
+    }))
   } else {
-    const releases = await octokit.paginate(octokit.rest.repos.listReleases, {
-      owner: 'cli',
-      repo: 'cli',
-    })
-    const versions = releases.map((release) => release.tag_name.slice(1))
-    return maxSatisfying(versions, version) ?? version
+    const coercedVersion = coerce(version)
+    if (!coercedVersion)
+      throw new Error(`"${version}" cannot be coerced to semver`)
+    for await (const $release of iterateReleases(octokit)) {
+      const releaseVersion = getReleaseVersion($release)
+      if (lt(releaseVersion, coercedVersion)) noReleaseError()
+      if (satisfies(releaseVersion, version)) {
+        release = $release
+        break
+      }
+    }
   }
+  if (!release) noReleaseError()
+  return { ...release, version: getReleaseVersion(release) }
 }
 
 export async function findDirectoryContainingBinary(dir: string) {
-  const regex = /(.*)\bgh(\.exe)?$/
   for (const file of await readdir(dir, { recursive: true })) {
-    const result = regex.exec(file)
-    if (result) return path.join(dir, result[1])
+    if (path.basename(file, '.exe') === 'gh')
+      return path.join(dir, path.dirname(file))
   }
   throw new Error(`Cound not find gh binary in ${dir}`)
 }
@@ -54,6 +65,26 @@ export async function findDirectoryContainingBinary(dir: string) {
 export async function login(token: string) {
   const { hostname } = new URL(getInput('github-server-url'))
   await $({ input: token })`gh auth login --with-token --hostname ${hostname}`
+}
+
+function getReleaseVersion(release: Release) {
+  return release.tag_name.replace(/^v/, '')
+}
+
+function noReleaseError(): never {
+  throw new Error(`Cannot find version "${getInput('version')}"`)
+}
+
+async function* iterateReleases(octokit: Octokit) {
+  for await (const response of octokit.paginate.iterator(
+    octokit.rest.repos.listReleases,
+    {
+      owner: 'cli',
+      repo: 'cli',
+    },
+  )) {
+    yield* response.data
+  }
 }
 
 function getPlatform() {
@@ -80,17 +111,6 @@ function getArch() {
   }
 }
 
-function getExt(version: string) {
-  switch (process.platform) {
-    case 'linux':
-      return 'tar.gz'
-    case 'darwin':
-      return lt(version, '2.28.0') ? 'tar.gz' : 'zip'
-    default:
-      return 'zip'
-  }
-}
-
 function github() {
   return getInput('cli-token')
     ? getOctokit(getInput('cli-token'))
@@ -99,3 +119,10 @@ function github() {
         auth: { reason: "no 'cli-token' input" },
       })
 }
+
+type Release =
+  RestEndpointMethodTypes['repos']['getLatestRelease']['response']['data']
+
+type VersionedRelease = Release & { version: string }
+
+type Octokit = InstanceType<typeof GitHub>

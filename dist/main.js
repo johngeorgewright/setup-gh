@@ -28442,8 +28442,11 @@ var $ = createExeca(mapScriptAsync, {}, deepScriptOptions, setScriptSync);
 var { sendMessage, getOneMessage, getEachMessage, getCancelSignal } = getIpcExport();
 //#endregion
 //#region src/lib.ts
-async function download(version) {
-	return await downloadTool(`https://github.com/cli/cli/releases/download/v${version}/${`gh_${version}_${getPlatform()}_${getArch()}.${getExt(version)}`}`);
+async function download(release) {
+	const platformArchIdentifier = `${getPlatform()} ${getArch()}`;
+	const asset = release.assets.find((asset) => asset.label?.endsWith(platformArchIdentifier));
+	if (!asset) throw new Error(`Cannot find release asset for ${platformArchIdentifier}`);
+	return await downloadTool(asset.browser_download_url);
 }
 async function extract(filename) {
 	const extracted = filename.endsWith(".zip") ? await extractZip(filename) : await extractTar(filename);
@@ -28451,31 +28454,51 @@ async function extract(filename) {
 	debug((await readdir(extracted)).join("\n"));
 	return extracted;
 }
-async function getVersion() {
+async function getRelease() {
 	const octokit = github();
 	const version = getInput("version");
-	if (version === "latest") {
-		const { data } = await octokit.rest.repos.getLatestRelease({
-			owner: "cli",
-			repo: "cli"
-		});
-		return data.tag_name.slice(1);
-	} else return (0, import_semver.maxSatisfying)((await octokit.paginate(octokit.rest.repos.listReleases, {
+	let release;
+	if (version === "latest") ({data: release} = await octokit.rest.repos.getLatestRelease({
 		owner: "cli",
 		repo: "cli"
-	})).map((release) => release.tag_name.slice(1)), version) ?? version;
+	}));
+	else {
+		const coercedVersion = (0, import_semver.coerce)(version);
+		if (!coercedVersion) throw new Error(`"${version}" cannot be coerced to semver`);
+		for await (const $release of iterateReleases(octokit)) {
+			const releaseVersion = getReleaseVersion($release);
+			if ((0, import_semver.lt)(releaseVersion, coercedVersion)) noReleaseError();
+			if ((0, import_semver.satisfies)(releaseVersion, version)) {
+				release = $release;
+				break;
+			}
+		}
+	}
+	if (!release) noReleaseError();
+	return {
+		...release,
+		version: getReleaseVersion(release)
+	};
 }
 async function findDirectoryContainingBinary(dir) {
-	const regex = /(.*)\bgh(\.exe)?$/;
-	for (const file of await readdir(dir, { recursive: true })) {
-		const result = regex.exec(file);
-		if (result) return path$1.join(dir, result[1]);
-	}
+	for (const file of await readdir(dir, { recursive: true })) if (path$1.basename(file, ".exe") === "gh") return path$1.join(dir, path$1.dirname(file));
 	throw new Error(`Cound not find gh binary in ${dir}`);
 }
 async function login(token) {
 	const { hostname } = new URL(getInput("github-server-url"));
 	await $({ input: token })`gh auth login --with-token --hostname ${hostname}`;
+}
+function getReleaseVersion(release) {
+	return release.tag_name.replace(/^v/, "");
+}
+function noReleaseError() {
+	throw new Error(`Cannot find version "${getInput("version")}"`);
+}
+async function* iterateReleases(octokit) {
+	for await (const response of octokit.paginate.iterator(octokit.rest.repos.listReleases, {
+		owner: "cli",
+		repo: "cli"
+	})) yield* response.data;
 }
 function getPlatform() {
 	switch (process.platform) {
@@ -28492,13 +28515,6 @@ function getArch() {
 		default: throw new Error(`Cannot install gh for the ${process.arch} arch`);
 	}
 }
-function getExt(version) {
-	switch (process.platform) {
-		case "linux": return "tar.gz";
-		case "darwin": return (0, import_semver.lt)(version, "2.28.0") ? "tar.gz" : "zip";
-		default: return "zip";
-	}
-}
 function github() {
 	return getInput("cli-token") ? getOctokit(getInput("cli-token")) : getOctokit(void 0, {
 		authStrategy: createUnauthenticatedAuth,
@@ -28507,13 +28523,13 @@ function github() {
 }
 //#endregion
 //#region src/main.ts
-var version = await getVersion();
-debug(`Resolved version: ${version}`);
-var found = find("gh", version);
+var release = await getRelease();
+debug(`Resolved version: ${release.version}`);
+var found = find("gh", release.version);
 setOutput("cache-hit", !!found);
-if (!found) found = await download(version).then(extract).then((dir) => cacheDir(dir, "gh", version));
+if (!found) found = await download(release).then(extract).then((dir) => cacheDir(dir, "gh", release.version));
 addPath(await findDirectoryContainingBinary(found));
-setOutput("gh-version", version);
+setOutput("gh-version", release.version);
 var token = getInput("token");
 if (token) {
 	await login(token);

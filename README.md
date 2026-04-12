@@ -36,7 +36,7 @@ action:
 name: Test
 on:
   push:
-    branches: "main"
+    branches: 'main'
 jobs:
   test-alpine:
     permissions:
