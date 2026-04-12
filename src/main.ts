@@ -75,10 +75,9 @@ if (token) {
 }
 
 async function findDirectoryContainingBinary(dir: string) {
-  const regex = /(.*)\bgh$/
-  for (const file of await readdir(dir, {recursive: true})) {
-    const result = regex.exec(file)
-    if (result) return path.join(dir, result[1])
+  for (const file of await readdir(dir, { recursive: true })) {
+    if (path.basename(file, '.exe') === 'gh')
+      return path.join(dir, path.dirname(file));
   }
-  throw new Error(`Cound not find gh binary in ${dir}`)
+  throw new Error(`Cound not find gh binary in ${dir}`);
 }
